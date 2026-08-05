@@ -157,6 +157,7 @@
         <input type="text" id="expNote" placeholder="What for? (optional)">
         <button class="primary spend" onclick="addExpense()">Spend</button>
       </div>
+      <div class="sub" style="margin-top:8px">Tip: type a bill or debt name exactly (e.g. "macrofactor") and it counts as paying that bill — the amount left updates above.</div>
     </div>
 
     <h2>Today's activity</h2>
@@ -165,16 +166,23 @@
 
   <!-- ============ BILLS & DEBT ============ -->
   <div class="page" id="page-money">
-    <h2>Monthly bills (recurring)</h2>
+    <h2>Recurring bills</h2>
     <div class="card">
       <div id="billsList"><div class="empty">No bills added.</div></div>
       <div class="inline">
         <input type="text" id="billName" placeholder="Rent, phone…">
-        <input type="number" inputmode="decimal" id="billAmt" placeholder="$" style="max-width:90px">
+        <select id="billFreq" style="max-width:120px" onchange="toggleFreq()">
+          <option value="m">Monthly</option>
+          <option value="y">Yearly</option>
+        </select>
+      </div>
+      <div class="inline">
+        <input type="number" inputmode="decimal" id="billAmt" placeholder="$">
         <input type="number" inputmode="numeric" id="billDue" placeholder="Day" min="1" max="31" style="max-width:70px">
+        <input type="date" id="billDate" style="display:none">
         <button class="ghost" onclick="addBill()">Add</button>
       </div>
-      <div class="sub" style="margin-top:10px">Total: <b id="billsTotal">$0</b>/month. When you actually pay a bill, log it as an expense on the Today tab so your cash stays right.</div>
+      <div class="sub" style="margin-top:10px">Total: <b id="billsTotal">$0</b>/month (yearly bills counted as ÷12). Tap <b>💵</b> to put money toward a bill (e.g. $50 toward rent), <b>✎</b> to change its amount or due date.</div>
     </div>
 
     <h2>Debts</h2>
@@ -189,7 +197,7 @@
         <input type="number" inputmode="numeric" id="debtDay" placeholder="Day" min="1" max="31" style="max-width:70px">
         <button class="ghost" onclick="addDebt()">Add</button>
       </div>
-      <div class="sub" style="margin-top:10px">The minimum changes every month — tap ✎ on a debt to set this month's amount. Tap 💵 to log a payment (it lowers the debt and your cash).</div>
+      <div class="sub" style="margin-top:10px">Tap <b>✎</b> on a debt to change this month's minimum and its due day. Tap <b>💵</b> to log a payment (it lowers the debt and your cash).</div>
     </div>
 
     <h2>Cash</h2>
@@ -282,6 +290,7 @@ function load(){
         if(d.debt>0) d.debts.push({id:uid(),name:'My debt',total:d.debt,min:0,due:null});
         (d.payments||[]).forEach(p=>{ if(!p.debtId&&d.debts[0]) p.debtId=d.debts[0].id; });
       }
+      d.bills.forEach(b=>{ if(!b.freq) b.freq='m'; });
       return d;
     }
   }catch(e){}
@@ -308,16 +317,79 @@ function addExpense(){
   const el=document.getElementById('expAmt'), ne=document.getElementById('expNote');
   const a=parseFloat(el.value);
   if(!a||a<=0) return;
-  D.expenses.push({id:uid(),date:todayStr(),amount:a,note:ne.value.trim()});
+  const note=ne.value.trim();
+  const bill=note?D.bills.find(b=>b.name.toLowerCase()===note.toLowerCase()):null;
+  const dbt=(!bill&&note)?D.debts.find(x=>x.name.toLowerCase()===note.toLowerCase()):null;
+  if(bill){
+    // counts as paying toward that bill
+    const info=billRemaining(bill);
+    if(bill.paidCycle!==info.key){ bill.paid=0; bill.paidCycle=info.key; }
+    bill.paid=(bill.paid||0)+a;
+    D.expenses.push({id:uid(),date:todayStr(),amount:a,note:bill.name+' payment',billId:bill.id});
+  }else if(dbt){
+    // counts as a debt payment
+    D.payments.push({id:uid(),date:todayStr(),amount:a,debtId:dbt.id});
+  }else{
+    D.expenses.push({id:uid(),date:todayStr(),amount:a,note});
+  }
   el.value=''; ne.value=''; save();
 }
+function toggleFreq(){
+  const y=document.getElementById('billFreq').value==='y';
+  document.getElementById('billDue').style.display=y?'none':'';
+  document.getElementById('billDate').style.display=y?'':'none';
+}
 function addBill(){
-  const n=document.getElementById('billName'), a=document.getElementById('billAmt'), du=document.getElementById('billDue');
+  const n=document.getElementById('billName'), a=document.getElementById('billAmt'),
+        du=document.getElementById('billDue'), fq=document.getElementById('billFreq'),
+        dt=document.getElementById('billDate');
   const amt=parseFloat(a.value);
   if(!n.value.trim()||!amt||amt<=0) return;
-  let due=parseInt(du.value); if(!due||due<1||due>31) due=null;
-  D.bills.push({id:uid(),name:n.value.trim(),amount:amt,due});
-  n.value=''; a.value=''; du.value=''; save();
+  const bill={id:uid(),name:n.value.trim(),amount:amt,freq:fq.value};
+  if(fq.value==='y'){ bill.dueDate=dt.value||null; bill.due=null; }
+  else{ let due=parseInt(du.value); bill.due=(due>=1&&due<=31)?due:null; }
+  D.bills.push(bill);
+  n.value=''; a.value=''; du.value=''; dt.value=''; save();
+}
+function nextDueBill(b){
+  if(b.freq==='y'&&b.dueDate){
+    const now=new Date(), t0=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    const [,mm,dd]=b.dueDate.split('-').map(Number);
+    let d=new Date(now.getFullYear(),mm-1,Math.min(dd,new Date(now.getFullYear(),mm,0).getDate()));
+    if(d<t0) d=new Date(now.getFullYear()+1,mm-1,Math.min(dd,new Date(now.getFullYear()+1,mm,0).getDate()));
+    return {date:d,days:Math.round((d-t0)/86400000)};
+  }
+  return b.due?nextDue(b.due):null;
+}
+function billRemaining(b){
+  const nd=nextDueBill(b);
+  const key=nd?localIso(nd.date):todayStr().slice(0,7);
+  const paid=(b.paidCycle===key)?(b.paid||0):0;
+  return {remaining:Math.max(0,b.amount-paid),paid,nd,key};
+}
+function payBill(id){
+  const b=D.bills.find(x=>x.id===id); if(!b) return;
+  const info=billRemaining(b);
+  const v=prompt('How much toward '+b.name+'? ('+fmt(info.remaining)+' still owed this cycle)','');
+  if(v===null) return;
+  const a=parseFloat(v); if(!a||a<=0) return;
+  if(b.paidCycle!==info.key){ b.paid=0; b.paidCycle=info.key; }
+  b.paid=(b.paid||0)+a;
+  D.expenses.push({id:uid(),date:todayStr(),amount:a,note:b.name+' payment',billId:id});
+  save();
+}
+function editBill(id){
+  const b=D.bills.find(x=>x.id===id); if(!b) return;
+  let v=prompt('Amount for '+b.name+' ('+(b.freq==='y'?'per year':'per month')+'):',b.amount);
+  if(v!==null){ const a=parseFloat(v); if(a>0) b.amount=a; }
+  if(b.freq==='y'){
+    v=prompt('Due date for '+b.name+' (YYYY-MM-DD):',b.dueDate||'');
+    if(v!==null&&/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) b.dueDate=v.trim();
+  }else{
+    v=prompt('Day of the month '+b.name+' is due (1-31):',b.due||'');
+    if(v!==null){ const dd=parseInt(v); if(dd>=1&&dd<=31) b.due=dd; }
+  }
+  save();
 }
 function ord(n){const s=['th','st','nd','rd'],v=n%100;return n+(s[(v-20)%10]||s[v]||s[0]);}
 function nextDue(day){
@@ -339,10 +411,11 @@ function addDebt(){
 }
 function editMin(id){
   const dbt=D.debts.find(d=>d.id===id); if(!dbt) return;
-  const v=prompt('Minimum payment this month for '+dbt.name+':',dbt.min||'');
-  if(v===null) return;
-  const a=parseFloat(v); if(isNaN(a)||a<0) return;
-  dbt.min=a; save();
+  let v=prompt('Minimum payment this month for '+dbt.name+':',dbt.min||'');
+  if(v!==null){ const a=parseFloat(v); if(!isNaN(a)&&a>=0) dbt.min=a; }
+  v=prompt('Day of the month '+dbt.name+' is due (1-31):',dbt.due||'');
+  if(v!==null){ const dd=parseInt(v); if(dd>=1&&dd<=31) dbt.due=dd; }
+  save();
 }
 function payDebtFor(id){
   const dbt=D.debts.find(d=>d.id===id); if(!dbt) return;
@@ -374,6 +447,17 @@ function setCash(){
 }
 function delItem(list,id){
   if(!confirm('Delete this entry?')) return;
+  if(list==='expenses'){
+    // if this expense was a bill payment, give the bill its amount back
+    const x=D.expenses.find(e=>e.id===id);
+    if(x&&x.billId){
+      const b=D.bills.find(bb=>bb.id===x.billId);
+      if(b){
+        const info=billRemaining(b);
+        if(b.paidCycle===info.key) b.paid=Math.max(0,(b.paid||0)-x.amount);
+      }
+    }
+  }
   D[list]=D[list].filter(x=>x.id!==id); save();
 }
 
@@ -394,7 +478,8 @@ function calc(){
   const pay=D.payments.filter(after).reduce((s,x)=>s+x.amount,0);
   const cash=D.cashBase+inc-exp-pay;
 
-  const billsTotal=D.bills.reduce((s,b)=>s+b.amount,0);
+  // set-aside: monthly bills count what's still unpaid this cycle; yearly bills count ÷12
+  const billsTotal=D.bills.reduce((s,b)=>s+(b.freq==='y'?b.amount/12:billRemaining(b).remaining),0);
   const minsTotal=D.debts.reduce((s,d)=>s+Math.min(d.min||0,debtLeftOf(d)),0);
   const debtLeft=D.debts.reduce((s,d)=>s+debtLeftOf(d),0);
   const free=cash-billsTotal-minsTotal;
@@ -405,13 +490,14 @@ function calc(){
   const buffer=(D.buffer===undefined||D.buffer===null)?50:D.buffer;
   const daysInMonth=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
   const daysLeft=daysInMonth-now.getDate()+1;
-  const avgSpend=sumSince(D.expenses,iso(weekAgo))/7;
+  // personal spending only — bill payments are already counted as obligations
+  const avgSpend=sumSince(D.expenses.filter(e=>!e.billId),iso(weekAgo))/7;
   const monthEnd=new Date(now.getFullYear(),now.getMonth(),daysInMonth);
   const obls=[
-    ...D.bills.map(b=>({name:b.name,amount:b.amount,due:b.due})),
-    ...D.debts.filter(dd=>debtLeftOf(dd)>0&&dd.min>0).map(dd=>({name:dd.name,amount:Math.min(dd.min,debtLeftOf(dd)),due:dd.due}))
-  ].map(o=>{
-    if(o.due){const nd=nextDue(o.due);return {...o,days:Math.max(1,nd.days),date:nd.date};}
+    ...D.bills.map(b=>{const info=billRemaining(b);return {name:b.name,amount:info.remaining,nd:info.nd};}),
+    ...D.debts.filter(dd=>debtLeftOf(dd)>0&&dd.min>0).map(dd=>({name:dd.name,amount:Math.min(dd.min,debtLeftOf(dd)),nd:dd.due?nextDue(dd.due):null}))
+  ].filter(o=>o.amount>0).map(o=>{
+    if(o.nd) return {...o,days:Math.max(1,o.nd.days),date:o.nd.date};
     return {...o,days:daysLeft,date:monthEnd}; // no due day: assume end of month
   }).sort((a,b)=>a.days-b.days);
   let perDay=0, binding=null, cum=0;
@@ -482,23 +568,44 @@ function render(){
 
   // bills
   document.getElementById('billsList').innerHTML = D.bills.length?
-    D.bills.map(b=>'<div class="row"><div>'+esc(b.name)+(b.due?'<div class="meta">Due the '+ord(b.due)+'</div>':'')+'</div><div style="display:flex;align-items:center;gap:4px"><span class="amt">'+fmt(b.amount)+'</span><button class="del" onclick="delItem(\'bills\',\''+b.id+'\')">✕</button></div></div>').join('')
+    D.bills.map(b=>{
+      const info=billRemaining(b);
+      let meta=b.freq==='y'?'Yearly':'Monthly';
+      if(b.freq==='y'&&b.dueDate) meta+=' · due '+info.nd.date.toLocaleDateString('en-CA',{month:'short',day:'numeric'});
+      else if(b.due) meta+=' · due the '+ord(b.due);
+      if(info.paid>0) meta+=' · '+fmt(info.paid)+' paid, '+fmt(info.remaining)+' left';
+      return '<div class="row"><div>'+esc(b.name)+'<div class="meta">'+meta+'</div></div>'+
+        '<div style="display:flex;align-items:center;gap:2px"><span class="amt">'+fmt(b.amount)+'</span>'+
+        '<button class="del" title="Pay toward this" onclick="payBill(\''+b.id+'\')">💵</button>'+
+        '<button class="del" title="Edit" onclick="editBill(\''+b.id+'\')">✎</button>'+
+        '<button class="del" onclick="delItem(\'bills\',\''+b.id+'\')">✕</button></div></div>';
+    }).join('')
     :'<div class="empty">No bills added.</div>';
 
   // upcoming bills + debt minimums on home page
   const items2=[
-    ...D.bills.map(b=>({name:b.name,amount:b.amount,due:b.due,tag:''})),
-    ...D.debts.filter(d=>debtLeftOf(d)>0&&d.min>0).map(d=>({name:d.name,amount:Math.min(d.min,debtLeftOf(d)),due:d.due,tag:'min payment'}))
-  ];
-  const up=items2.filter(b=>b.due).map(b=>({...b,nd:nextDue(b.due)})).sort((a,b)=>a.nd.days-b.nd.days);
-  const noDate=items2.filter(b=>!b.due);
+    ...D.bills.map(b=>{
+      const info=billRemaining(b);
+      const done=info.remaining<=0&&info.paid>0;
+      let tag=b.freq==='y'?'yearly':'';
+      if(info.paid>0&&!done) tag+=(tag?' · ':'')+fmt(info.paid)+' already paid';
+      return {name:b.name,amount:info.remaining,nd:info.nd,tag,done};
+    }),
+    ...D.debts.filter(d=>debtLeftOf(d)>0&&d.min>0).map(d=>({name:d.name,amount:Math.min(d.min,debtLeftOf(d)),nd:d.due?nextDue(d.due):null,tag:'min payment',done:false}))
+  ].filter(x=>x.amount>0||x.done);
+  const up=items2.filter(b=>b.nd).sort((a,b)=>a.nd.days-b.nd.days);
+  const noDate=items2.filter(b=>!b.nd);
+  const rowUp=(b,metaLead)=>{
+    if(b.done) return '<div class="row"><div>'+esc(b.name)+'<div class="meta">'+metaLead+(b.tag?' · '+b.tag:'')+'</div></div><span class="amt pos">✓ Paid</span></div>';
+    return '<div class="row"><div>'+esc(b.name)+'<div class="meta">'+metaLead+(b.tag?' · '+b.tag:'')+'</div></div><span class="amt '+(b.warn?'warn':'')+'">'+fmt(b.amount)+'</span></div>';
+  };
   document.getElementById('upcomingBills').innerHTML = (up.length||noDate.length)?
     up.map(b=>{
       const when=b.nd.days===0?'<span class="warn">Due today</span>':b.nd.days===1?'Due tomorrow':'Due in '+b.nd.days+' days';
-      const cls=b.nd.days<=3?'warn':'';
-      return '<div class="row"><div>'+esc(b.name)+'<div class="meta">'+b.nd.date.toLocaleDateString('en-CA',{month:'short',day:'numeric'})+' · '+when+(b.tag?' · '+b.tag:'')+'</div></div><span class="amt '+cls+'">'+fmt(b.amount)+'</span></div>';
+      b.warn=b.nd.days<=3;
+      return rowUp(b,b.nd.date.toLocaleDateString('en-CA',{month:'short',day:'numeric'})+' · '+(b.done?'due date':when));
     }).join('')+
-    noDate.map(b=>'<div class="row"><div>'+esc(b.name)+'<div class="meta">No due day set'+(b.tag?' · '+b.tag:'')+'</div></div><span class="amt">'+fmt(b.amount)+'</span></div>').join('')
+    noDate.map(b=>rowUp(b,'No due day set')).join('')
     :'<div class="empty">No bills or debts with due dates yet. Add them in Bills &amp; Debt.</div>';
   set('billsTotal',fmt(c.billsTotal));
 
