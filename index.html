@@ -236,6 +236,23 @@
         <div class="sub" id="avgDaySub"></div>
       </div>
     </div>
+    <h2>Add a past entry</h2>
+    <div class="card">
+      <div class="inline" style="margin-top:0">
+        <input type="date" id="histDate">
+        <select id="histType" style="max-width:130px">
+          <option value="income">Income</option>
+          <option value="expense">Expense</option>
+        </select>
+      </div>
+      <div class="inline">
+        <input type="number" inputmode="decimal" id="histAmt" placeholder="Amount">
+        <input type="text" id="histNote" placeholder="Source / what for">
+        <button class="ghost" onclick="addPast()">Add</button>
+      </div>
+      <div class="sub" style="margin-top:8px">Forgot to log something? Pick the day it happened and add it here.</div>
+    </div>
+
     <h2>All activity</h2>
     <div class="card" id="histList"><div class="empty">No entries yet.</div></div>
   </div>
@@ -250,7 +267,8 @@
 <script>
 const KEY='moneyTrackerV1';
 const fmt=n=>{const v=Math.round(n*100)/100;return (v<0?'−$':'$')+Math.abs(v).toLocaleString('en-CA',{minimumFractionDigits:0,maximumFractionDigits:2});};
-const todayStr=()=>new Date().toISOString().slice(0,10);
+const localIso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const todayStr=()=>localIso(new Date());
 const uid=()=>Date.now()+''+Math.floor(Math.random()*1000);
 
 let D=load();
@@ -334,6 +352,16 @@ function payDebtFor(id){
   D.payments.push({id:uid(),date:todayStr(),amount:a,debtId:id});
   save();
 }
+function addPast(){
+  const dt=document.getElementById('histDate'), ty=document.getElementById('histType'),
+        am=document.getElementById('histAmt'), no=document.getElementById('histNote');
+  const a=parseFloat(am.value);
+  if(!dt.value||!a||a<=0) return;
+  if(dt.value>todayStr()){alert('That date is in the future.');return;}
+  if(ty.value==='income') D.income.push({id:uid(),date:dt.value,amount:a,source:no.value.trim()||'Other'});
+  else D.expenses.push({id:uid(),date:dt.value,amount:a,note:no.value.trim()});
+  am.value=''; no.value=''; save();
+}
 function debtLeftOf(dbt){
   return Math.max(0,dbt.total-D.payments.filter(p=>p.debtId===dbt.id).reduce((s,p)=>s+p.amount,0));
 }
@@ -352,7 +380,7 @@ function delItem(list,id){
 /* ---------- math ---------- */
 function sumSince(list,isoDate){ return list.filter(x=>x.date>=isoDate).reduce((s,x)=>s+x.amount,0); }
 function sumOn(list,d){ return list.filter(x=>x.date===d).reduce((s,x)=>s+x.amount,0); }
-function iso(d){ return d.toISOString().slice(0,10); }
+function iso(d){ return localIso(d); }
 
 function calc(){
   const t=todayStr();
