@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f1420">
+<title>Money Tracker</title>
+<style>
+  :root{
+    --bg:#0f1420; --card:#1a2130; --card2:#212a3d; --line:#2c3750;
+    --text:#eef1f7; --muted:#8b96ad; --green:#3ddc84; --red:#ff6b6b;
+    --amber:#ffc857; --blue:#5b9dff; --radius:14px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    font-size:16px; padding-bottom:80px;
+  }
+  .wrap{max-width:520px; margin:0 auto; padding:16px;}
+  h1{font-size:1.15rem; padding:14px 16px 0; max-width:520px; margin:0 auto; color:var(--muted); font-weight:600;}
+  h2{font-size:.8rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:20px 0 8px;}
+
+  /* Hero numbers */
+  .hero{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;}
+  .stat{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:14px;}
+  .stat.big{grid-column:1/-1;}
+  .stat .label{font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);}
+  .stat .value{font-size:1.5rem; font-weight:700; margin-top:4px; font-variant-numeric:tabular-nums;}
+  .stat.big .value{font-size:2.2rem;}
+  .pos{color:var(--green);} .neg{color:var(--red);} .warn{color:var(--amber);}
+  .sub{font-size:.78rem; color:var(--muted); margin-top:4px;}
+
+  /* Goal banner */
+  .goal{background:linear-gradient(135deg,#1d2b4a,#1a2130); border:1px solid var(--line); border-radius:var(--radius); padding:14px; margin-top:10px;}
+  .goal .big{font-size:1.3rem; font-weight:700;}
+  .goal .track{margin-top:6px; font-size:.85rem;}
+  .bar{height:8px; background:#0d1322; border-radius:99px; overflow:hidden; margin-top:10px;}
+  .bar i{display:block; height:100%; background:var(--green); border-radius:99px; transition:width .3s;}
+  .mini{width:64px; padding:4px 8px; font-size:.85rem; text-align:right;}
+
+  /* Cards / rows */
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:14px; margin-bottom:10px;}
+  .row{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 0; border-bottom:1px solid var(--line);}
+  .row:last-child{border-bottom:none;}
+  .row .meta{font-size:.78rem; color:var(--muted);}
+  .row .amt{font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .del{background:none; border:none; color:var(--muted); font-size:1.1rem; cursor:pointer; padding:4px 6px;}
+  .del:active{color:var(--red);}
+
+  /* Inputs */
+  input,select{
+    background:var(--card2); border:1px solid var(--line); color:var(--text);
+    border-radius:10px; padding:12px; font-size:1rem; width:100%;
+  }
+  input:focus,select:focus{outline:none; border-color:var(--blue);}
+  .inline{display:flex; gap:8px; margin-top:8px;}
+  .inline input{flex:1; min-width:0;}
+  .chips{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;}
+  .chip{
+    background:var(--card2); border:1px solid var(--line); color:var(--muted);
+    border-radius:99px; padding:8px 14px; font-size:.85rem; cursor:pointer;
+  }
+  .chip.on{background:var(--blue); border-color:var(--blue); color:#fff;}
+  button.primary{
+    background:var(--green); color:#08130c; border:none; border-radius:10px;
+    padding:12px 18px; font-size:1rem; font-weight:700; cursor:pointer;
+  }
+  button.primary.spend{background:var(--red); color:#fff;}
+  button.primary:active{opacity:.85;}
+  button.ghost{
+    background:var(--card2); color:var(--text); border:1px solid var(--line);
+    border-radius:10px; padding:10px 14px; font-size:.9rem; cursor:pointer;
+  }
+  .empty{color:var(--muted); font-size:.9rem; text-align:center; padding:12px 0;}
+
+  /* Tabs */
+  .tabs{
+    position:fixed; bottom:0; left:0; right:0; background:var(--card);
+    border-top:1px solid var(--line); display:flex;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .tabs button{
+    flex:1; background:none; border:none; color:var(--muted); font-size:.78rem;
+    padding:10px 0 12px; cursor:pointer;
+  }
+  .tabs button .ico{display:block; font-size:1.25rem; margin-bottom:2px;}
+  .tabs button.on{color:var(--green);}
+  .page{display:none;} .page.on{display:block;}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px;}
+  label.fld{display:block; font-size:.78rem; color:var(--muted); margin-top:10px;}
+  label.fld input{margin-top:4px;}
+</style>
+</head>
+<body>
+<h1>💵 Money Tracker</h1>
+<div class="wrap">
+
+  <!-- ============ TODAY ============ -->
+  <div class="page on" id="page-today">
+    <div class="hero">
+      <div class="stat big">
+        <div class="label">Free cash (yours to spend or save)</div>
+        <div class="value" id="freeCash">$0</div>
+        <div class="sub" id="freeCashSub"></div>
+      </div>
+      <div class="stat">
+        <div class="label">Cash on hand</div>
+        <div class="value" id="cashNow">$0</div>
+      </div>
+      <div class="stat">
+        <div class="label">Debt left</div>
+        <div class="value warn" id="debtLeft">$0</div>
+      </div>
+      <div class="stat">
+        <div class="label">Earned today</div>
+        <div class="value pos" id="earnedToday">$0</div>
+      </div>
+      <div class="stat">
+        <div class="label">Spent today</div>
+        <div class="value neg" id="spentToday">$0</div>
+      </div>
+    </div>
+
+    <div class="goal" id="minEarnBox">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Minimum to earn today</div>
+        <div style="font-size:.78rem;color:var(--muted);white-space:nowrap">keep $<input type="number" inputmode="decimal" id="bufferInput" class="mini"> free</div>
+      </div>
+      <div class="big" id="minEarnVal"></div>
+      <div class="bar"><i id="minEarnBar" style="width:0%"></i></div>
+      <div class="track" id="minEarnSub"></div>
+    </div>
+
+    <h2>Upcoming bills &amp; payments</h2>
+    <div class="card" id="upcomingBills"><div class="empty">No bills with due dates yet. Add them in Bills &amp; Debt.</div></div>
+
+    <h2>Add income</h2>
+    <div class="card">
+      <div class="chips" id="srcChips">
+        <button class="chip on" data-src="Uber Eats">Uber Eats</button>
+        <button class="chip" data-src="Air Force Customs">Air Force Customs</button>
+        <button class="chip" data-src="Other">Other</button>
+      </div>
+      <div class="inline">
+        <input type="number" inputmode="decimal" id="incAmt" placeholder="+200">
+        <button class="primary" onclick="addIncome()">Add</button>
+      </div>
+    </div>
+
+    <h2>Add expense</h2>
+    <div class="card">
+      <div class="inline">
+        <input type="number" inputmode="decimal" id="expAmt" placeholder="Amount">
+        <input type="text" id="expNote" placeholder="What for? (optional)">
+        <button class="primary spend" onclick="addExpense()">Spend</button>
+      </div>
+    </div>
+
+    <h2>Today's activity</h2>
+    <div class="card" id="todayList"><div class="empty">Nothing yet today.</div></div>
+  </div>
+
+  <!-- ============ BILLS & DEBT ============ -->
+  <div class="page" id="page-money">
+    <h2>Monthly bills (recurring)</h2>
+    <div class="card">
+      <div id="billsList"><div class="empty">No bills added.</div></div>
+      <div class="inline">
+        <input type="text" id="billName" placeholder="Rent, phone…">
+        <input type="number" inputmode="decimal" id="billAmt" placeholder="$" style="max-width:90px">
+        <input type="number" inputmode="numeric" id="billDue" placeholder="Day" min="1" max="31" style="max-width:70px">
+        <button class="ghost" onclick="addBill()">Add</button>
+      </div>
+      <div class="sub" style="margin-top:10px">Total: <b id="billsTotal">$0</b>/month. When you actually pay a bill, log it as an expense on the Today tab so your cash stays right.</div>
+    </div>
+
+    <h2>Debts</h2>
+    <div class="card">
+      <div id="debtsList"><div class="empty">No debts added.</div></div>
+      <div class="inline">
+        <input type="text" id="debtName" placeholder="Credit card, loan…">
+      </div>
+      <div class="inline">
+        <input type="number" inputmode="decimal" id="debtTotal" placeholder="Total owed">
+        <input type="number" inputmode="decimal" id="debtMin" placeholder="Min /mo">
+        <input type="number" inputmode="numeric" id="debtDay" placeholder="Day" min="1" max="31" style="max-width:70px">
+        <button class="ghost" onclick="addDebt()">Add</button>
+      </div>
+      <div class="sub" style="margin-top:10px">The minimum changes every month — tap ✎ on a debt to set this month's amount. Tap 💵 to log a payment (it lowers the debt and your cash).</div>
+    </div>
+
+    <h2>Cash</h2>
+    <div class="card">
+      <label class="fld">Cash you have right now (bank + pocket). Set this once; income and expenses update it automatically. Re-enter it any time to correct it.
+        <input type="number" inputmode="decimal" id="cashInput" placeholder="0">
+        <button class="ghost" style="margin-top:8px" onclick="setCash()">Set cash to this amount</button>
+      </label>
+    </div>
+
+    <h2>Backup</h2>
+    <div class="card">
+      <div class="inline" style="margin-top:0">
+        <button class="ghost" onclick="exportData()">Export data</button>
+        <button class="ghost" onclick="document.getElementById('importFile').click()">Import</button>
+        <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+      </div>
+      <div class="sub" style="margin-top:8px">Data lives on this device only. Export → send file to your phone → import there.</div>
+    </div>
+  </div>
+
+  <!-- ============ HISTORY ============ -->
+  <div class="page" id="page-history">
+    <div class="hero">
+      <div class="stat">
+        <div class="label">Earned this week</div>
+        <div class="value pos" id="earnedWeek">$0</div>
+      </div>
+      <div class="stat">
+        <div class="label">Spent this week</div>
+        <div class="value neg" id="spentWeek">$0</div>
+      </div>
+      <div class="stat">
+        <div class="label">Earned this month</div>
+        <div class="value pos" id="earnedMonth">$0</div>
+      </div>
+      <div class="stat">
+        <div class="label">Spent this month</div>
+        <div class="value neg" id="spentMonth">$0</div>
+      </div>
+      <div class="stat big">
+        <div class="label">Avg earned per day (last 7 days)</div>
+        <div class="value" id="avgDay">$0</div>
+        <div class="sub" id="avgDaySub"></div>
+      </div>
+    </div>
+    <h2>All activity</h2>
+    <div class="card" id="histList"><div class="empty">No entries yet.</div></div>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="on" onclick="showPage('today',this)"><span class="ico">📅</span>Today</button>
+  <button onclick="showPage('money',this)"><span class="ico">🏦</span>Bills & Debt</button>
+  <button onclick="showPage('history',this)"><span class="ico">📈</span>History</button>
+</div>
+
+<script>
+const KEY='moneyTrackerV1';
+const fmt=n=>{const v=Math.round(n*100)/100;return (v<0?'−$':'$')+Math.abs(v).toLocaleString('en-CA',{minimumFractionDigits:0,maximumFractionDigits:2});};
+const todayStr=()=>new Date().toISOString().slice(0,10);
+const uid=()=>Date.now()+''+Math.floor(Math.random()*1000);
+
+let D=load();
+function load(){
+  try{
+    const d=JSON.parse(localStorage.getItem(KEY));
+    if(d && d.income){
+      // migrate old single-debt format to per-debt list
+      if(!d.debts){
+        d.debts=[];
+        if(d.debt>0) d.debts.push({id:uid(),name:'My debt',total:d.debt,min:0,due:null});
+        (d.payments||[]).forEach(p=>{ if(!p.debtId&&d.debts[0]) p.debtId=d.debts[0].id; });
+      }
+      return d;
+    }
+  }catch(e){}
+  return {income:[],expenses:[],bills:[],payments:[],debts:[],cashBase:0,cashSetAt:null};
+}
+function save(){ localStorage.setItem(KEY,JSON.stringify(D)); render(); }
+
+/* ---------- actions ---------- */
+let curSrc='Uber Eats';
+document.getElementById('srcChips').addEventListener('click',e=>{
+  if(!e.target.dataset.src) return;
+  curSrc=e.target.dataset.src;
+  document.querySelectorAll('#srcChips .chip').forEach(c=>c.classList.toggle('on',c===e.target));
+});
+
+function addIncome(){
+  const el=document.getElementById('incAmt');
+  const a=parseFloat(el.value);
+  if(!a||a<=0) return;
+  D.income.push({id:uid(),date:todayStr(),amount:a,source:curSrc});
+  el.value=''; save();
+}
+function addExpense(){
+  const el=document.getElementById('expAmt'), ne=document.getElementById('expNote');
+  const a=parseFloat(el.value);
+  if(!a||a<=0) return;
+  D.expenses.push({id:uid(),date:todayStr(),amount:a,note:ne.value.trim()});
+  el.value=''; ne.value=''; save();
+}
+function addBill(){
+  const n=document.getElementById('billName'), a=document.getElementById('billAmt'), du=document.getElementById('billDue');
+  const amt=parseFloat(a.value);
+  if(!n.value.trim()||!amt||amt<=0) return;
+  let due=parseInt(du.value); if(!due||due<1||due>31) due=null;
+  D.bills.push({id:uid(),name:n.value.trim(),amount:amt,due});
+  n.value=''; a.value=''; du.value=''; save();
+}
+function ord(n){const s=['th','st','nd','rd'],v=n%100;return n+(s[(v-20)%10]||s[v]||s[0]);}
+function nextDue(day){
+  const now=new Date(); let y=now.getFullYear(), m=now.getMonth();
+  const clamp=(yy,mm)=>Math.min(day,new Date(yy,mm+1,0).getDate());
+  if(clamp(y,m)<now.getDate()){ m++; if(m>11){m=0;y++;} } // already passed this month
+  const d=new Date(y,m,clamp(y,m));
+  const days=Math.round((d-new Date(now.getFullYear(),now.getMonth(),now.getDate()))/86400000);
+  return {date:d,days};
+}
+function addDebt(){
+  const n=document.getElementById('debtName'), t=document.getElementById('debtTotal'),
+        m=document.getElementById('debtMin'), dy=document.getElementById('debtDay');
+  const total=parseFloat(t.value);
+  if(!n.value.trim()||isNaN(total)) return;
+  let due=parseInt(dy.value); if(!due||due<1||due>31) due=null;
+  D.debts.push({id:uid(),name:n.value.trim(),total,min:parseFloat(m.value)||0,due});
+  n.value=''; t.value=''; m.value=''; dy.value=''; save();
+}
+function editMin(id){
+  const dbt=D.debts.find(d=>d.id===id); if(!dbt) return;
+  const v=prompt('Minimum payment this month for '+dbt.name+':',dbt.min||'');
+  if(v===null) return;
+  const a=parseFloat(v); if(isNaN(a)||a<0) return;
+  dbt.min=a; save();
+}
+function payDebtFor(id){
+  const dbt=D.debts.find(d=>d.id===id); if(!dbt) return;
+  const v=prompt('Payment amount for '+dbt.name+':',dbt.min||'');
+  if(v===null) return;
+  const a=parseFloat(v); if(!a||a<=0) return;
+  D.payments.push({id:uid(),date:todayStr(),amount:a,debtId:id});
+  save();
+}
+function debtLeftOf(dbt){
+  return Math.max(0,dbt.total-D.payments.filter(p=>p.debtId===dbt.id).reduce((s,p)=>s+p.amount,0));
+}
+function setCash(){
+  const el=document.getElementById('cashInput');
+  const a=parseFloat(el.value);
+  if(isNaN(a)) return;
+  D.cashBase=a; D.cashSetAt=new Date().toISOString();
+  el.value=''; save();
+}
+function delItem(list,id){
+  if(!confirm('Delete this entry?')) return;
+  D[list]=D[list].filter(x=>x.id!==id); save();
+}
+
+/* ---------- math ---------- */
+function sumSince(list,isoDate){ return list.filter(x=>x.date>=isoDate).reduce((s,x)=>s+x.amount,0); }
+function sumOn(list,d){ return list.filter(x=>x.date===d).reduce((s,x)=>s+x.amount,0); }
+function iso(d){ return d.toISOString().slice(0,10); }
+
+function calc(){
+  const t=todayStr();
+  const now=new Date();
+  const weekAgo=new Date(now); weekAgo.setDate(now.getDate()-6);
+  const monthStart=t.slice(0,8)+'01';
+  // cash = base + everything logged after the moment cash was set
+  const after=x=>!D.cashSetAt || x.id>String(new Date(D.cashSetAt).getTime());
+  const inc=D.income.filter(after).reduce((s,x)=>s+x.amount,0);
+  const exp=D.expenses.filter(after).reduce((s,x)=>s+x.amount,0);
+  const pay=D.payments.filter(after).reduce((s,x)=>s+x.amount,0);
+  const cash=D.cashBase+inc-exp-pay;
+
+  const billsTotal=D.bills.reduce((s,b)=>s+b.amount,0);
+  const minsTotal=D.debts.reduce((s,d)=>s+Math.min(d.min||0,debtLeftOf(d)),0);
+  const debtLeft=D.debts.reduce((s,d)=>s+debtLeftOf(d),0);
+  const free=cash-billsTotal-minsTotal;
+
+  // minimum to earn per day, deadline-aware: for every due date, you must have
+  // enough cash ON HAND by that date (cumulative payments due + buffer + expected
+  // spending). The daily minimum is set by whichever deadline is tightest.
+  const buffer=(D.buffer===undefined||D.buffer===null)?50:D.buffer;
+  const daysInMonth=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
+  const daysLeft=daysInMonth-now.getDate()+1;
+  const avgSpend=sumSince(D.expenses,iso(weekAgo))/7;
+  const monthEnd=new Date(now.getFullYear(),now.getMonth(),daysInMonth);
+  const obls=[
+    ...D.bills.map(b=>({name:b.name,amount:b.amount,due:b.due})),
+    ...D.debts.filter(dd=>debtLeftOf(dd)>0&&dd.min>0).map(dd=>({name:dd.name,amount:Math.min(dd.min,debtLeftOf(dd)),due:dd.due}))
+  ].map(o=>{
+    if(o.due){const nd=nextDue(o.due);return {...o,days:Math.max(1,nd.days),date:nd.date};}
+    return {...o,days:daysLeft,date:monthEnd}; // no due day: assume end of month
+  }).sort((a,b)=>a.days-b.days);
+  let perDay=0, binding=null, cum=0;
+  for(const o of obls){
+    cum+=o.amount;
+    const need=(cum+buffer-cash)/o.days+avgSpend;
+    if(need>perDay){perDay=need; binding={name:o.name,date:o.date,days:o.days,cum};}
+  }
+  if(!obls.length) perDay=Math.max(0,(buffer-cash)/daysLeft+avgSpend);
+  perDay=Math.max(0,perDay);
+  const minEarn={perDay,daysLeft,avgSpend,buffer,binding};
+
+  return {t,cash,billsTotal,minsTotal,debtLeft,free,minEarn,weekAgoIso:iso(weekAgo),monthStart};
+}
+
+/* ---------- render ---------- */
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+
+function render(){
+  const c=calc(), t=c.t;
+  const set=(id,v)=>document.getElementById(id).textContent=v;
+  const set2=(id,v)=>document.getElementById(id).innerHTML=v;
+
+  set('cashNow',fmt(c.cash));
+  set('debtLeft',fmt(c.debtLeft));
+  set('earnedToday',fmt(sumOn(D.income,t)));
+  set('spentToday',fmt(sumOn(D.expenses,t)+sumOn(D.payments,t)));
+
+  const fc=document.getElementById('freeCash');
+  fc.textContent=fmt(c.free);
+  fc.className='value '+(c.free>=0?'pos':'neg');
+  set('freeCashSub','Cash '+fmt(c.cash)+' minus '+fmt(c.billsTotal)+' bills and '+fmt(c.minsTotal)+' debt minimums set aside');
+
+  // minimum to earn today
+  const me=c.minEarn, earned=sumOn(D.income,t);
+  const bi=document.getElementById('bufferInput');
+  if(document.activeElement!==bi) bi.value=me.buffer;
+  if(me.perDay<=0){
+    set('minEarnVal','$0 — you\'re covered ✓');
+    document.getElementById('minEarnBar').style.width='100%';
+    set('minEarnSub','Your cash already covers bills, debt minimums, and your '+fmt(me.buffer)+' buffer.');
+  }else{
+    set('minEarnVal',fmt(me.perDay)+' / day');
+    const pct=Math.min(100,Math.round(earned/me.perDay*100));
+    document.getElementById('minEarnBar').style.width=pct+'%';
+    const status=earned>=me.perDay?'<span class="pos">✓ Hit today\'s minimum ('+fmt(earned-me.perDay)+' extra)</span>':'<span class="warn">'+fmt(me.perDay-earned)+' to go today</span>';
+    let detail;
+    if(me.binding){
+      const when=me.binding.date.toLocaleDateString('en-CA',{month:'short',day:'numeric'});
+      const target=me.binding.cum+me.buffer;
+      const still=Math.max(0,target-c.cash);
+      detail='Set by <b>'+esc(me.binding.name)+'</b>: '+fmt(me.binding.cum)+' in payments due by '+when+' + '+fmt(me.buffer)+' buffer = <b>'+fmt(target)+'</b> needed on hand.<br>'+
+        'You have '+fmt(c.cash)+' → '+fmt(still)+' left to earn ÷ '+me.binding.days+(me.binding.days===1?' day':' days')+' = '+fmt(still/me.binding.days)+'/day'+
+        (me.avgSpend>0?' + ~'+fmt(me.avgSpend)+'/day you\'ve been spending':'')+'.';
+    }else{
+      detail='Covers your '+fmt(me.buffer)+' buffer'+(me.avgSpend>0?' and the ~'+fmt(me.avgSpend)+'/day you\'ve been spending':'')+'.';
+    }
+    set2('minEarnSub',status+'<div class="sub">'+detail+'</div>');
+  }
+
+  // today list
+  const items=[
+    ...D.income.filter(x=>x.date===t).map(x=>({...x,kind:'income',list:'income'})),
+    ...D.expenses.filter(x=>x.date===t).map(x=>({...x,kind:'expense',list:'expenses'})),
+    ...D.payments.filter(x=>x.date===t).map(x=>({...x,kind:'debt payment',list:'payments'}))
+  ].sort((a,b)=>b.id.localeCompare(a.id));
+  document.getElementById('todayList').innerHTML = items.length? items.map(rowHtml).join('') : '<div class="empty">Nothing yet today.</div>';
+
+  // bills
+  document.getElementById('billsList').innerHTML = D.bills.length?
+    D.bills.map(b=>'<div class="row"><div>'+esc(b.name)+(b.due?'<div class="meta">Due the '+ord(b.due)+'</div>':'')+'</div><div style="display:flex;align-items:center;gap:4px"><span class="amt">'+fmt(b.amount)+'</span><button class="del" onclick="delItem(\'bills\',\''+b.id+'\')">✕</button></div></div>').join('')
+    :'<div class="empty">No bills added.</div>';
+
+  // upcoming bills + debt minimums on home page
+  const items2=[
+    ...D.bills.map(b=>({name:b.name,amount:b.amount,due:b.due,tag:''})),
+    ...D.debts.filter(d=>debtLeftOf(d)>0&&d.min>0).map(d=>({name:d.name,amount:Math.min(d.min,debtLeftOf(d)),due:d.due,tag:'min payment'}))
+  ];
+  const up=items2.filter(b=>b.due).map(b=>({...b,nd:nextDue(b.due)})).sort((a,b)=>a.nd.days-b.nd.days);
+  const noDate=items2.filter(b=>!b.due);
+  document.getElementById('upcomingBills').innerHTML = (up.length||noDate.length)?
+    up.map(b=>{
+      const when=b.nd.days===0?'<span class="warn">Due today</span>':b.nd.days===1?'Due tomorrow':'Due in '+b.nd.days+' days';
+      const cls=b.nd.days<=3?'warn':'';
+      return '<div class="row"><div>'+esc(b.name)+'<div class="meta">'+b.nd.date.toLocaleDateString('en-CA',{month:'short',day:'numeric'})+' · '+when+(b.tag?' · '+b.tag:'')+'</div></div><span class="amt '+cls+'">'+fmt(b.amount)+'</span></div>';
+    }).join('')+
+    noDate.map(b=>'<div class="row"><div>'+esc(b.name)+'<div class="meta">No due day set'+(b.tag?' · '+b.tag:'')+'</div></div><span class="amt">'+fmt(b.amount)+'</span></div>').join('')
+    :'<div class="empty">No bills or debts with due dates yet. Add them in Bills &amp; Debt.</div>';
+  set('billsTotal',fmt(c.billsTotal));
+
+  // debts
+  document.getElementById('debtsList').innerHTML = D.debts.length?
+    D.debts.map(dbt=>{
+      const left=debtLeftOf(dbt);
+      const meta=(dbt.min>0?'Min '+fmt(dbt.min)+'/mo':'No minimum set')+(dbt.due?' · due the '+ord(dbt.due):'')+(left>0?' · '+fmt(left)+' left':' · <span class="pos">paid off ✓</span>');
+      return '<div class="row"><div>'+esc(dbt.name)+'<div class="meta">'+meta+'</div></div>'+
+        '<div style="display:flex;align-items:center;gap:2px">'+
+        '<button class="del" title="Log payment" onclick="payDebtFor(\''+dbt.id+'\')">💵</button>'+
+        '<button class="del" title="Edit minimum" onclick="editMin(\''+dbt.id+'\')">✎</button>'+
+        '<button class="del" onclick="delItem(\'debts\',\''+dbt.id+'\')">✕</button></div></div>';
+    }).join('')
+    :'<div class="empty">No debts added.</div>';
+  document.getElementById('cashInput').placeholder=c.cash.toFixed(2);
+
+  // history
+  set('earnedWeek',fmt(sumSince(D.income,c.weekAgoIso)));
+  set('spentWeek',fmt(sumSince(D.expenses,c.weekAgoIso)+sumSince(D.payments,c.weekAgoIso)));
+  set('earnedMonth',fmt(sumSince(D.income,c.monthStart)));
+  set('spentMonth',fmt(sumSince(D.expenses,c.monthStart)+sumSince(D.payments,c.monthStart)));
+  const avg=sumSince(D.income,c.weekAgoIso)/7;
+  set('avgDay',fmt(avg));
+  const monthlyNeed=c.billsTotal+c.minsTotal;
+  document.getElementById('avgDaySub').textContent=monthlyNeed>0?'You need about '+fmt(monthlyNeed)+'/month ('+fmt(monthlyNeed*12/365)+'/day) just to cover bills and debt minimums.':'';
+
+  const all=[
+    ...D.income.map(x=>({...x,kind:'income',list:'income'})),
+    ...D.expenses.map(x=>({...x,kind:'expense',list:'expenses'})),
+    ...D.payments.map(x=>({...x,kind:'debt payment',list:'payments'}))
+  ].sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id)).slice(0,200);
+  document.getElementById('histList').innerHTML = all.length? all.map(x=>rowHtml(x,true)).join('') : '<div class="empty">No entries yet.</div>';
+}
+
+function rowHtml(x,withDate){
+  const sign=x.kind==='income'?'+':'−';
+  const cls=x.kind==='income'?'pos':'neg';
+  let label;
+  if(x.kind==='income') label=esc(x.source||'Income');
+  else if(x.kind==='debt payment'){const dbt=D.debts.find(d=>d.id===x.debtId);label='Payment · '+esc(dbt?dbt.name:'debt');}
+  else label=esc(x.note||'Expense');
+  return '<div class="row"><div>'+label+(withDate?'<div class="meta">'+x.date+'</div>':'')+
+    '</div><div style="display:flex;align-items:center;gap:4px"><span class="amt '+cls+'">'+sign+fmt(x.amount)+
+    '</span><button class="del" onclick="delItem(\''+x.list+'\',\''+x.id+'\')">✕</button></div></div>';
+}
+
+document.getElementById('bufferInput').addEventListener('change',e=>{
+  const v=parseFloat(e.target.value);
+  if(!isNaN(v)&&v>=0){D.buffer=v; save();}
+});
+
+/* ---------- tabs / backup ---------- */
+function showPage(p,btn){
+  document.querySelectorAll('.page').forEach(x=>x.classList.remove('on'));
+  document.getElementById('page-'+p).classList.add('on');
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  window.scrollTo(0,0);
+}
+function exportData(){
+  const blob=new Blob([JSON.stringify(D,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='money-tracker-backup-'+todayStr()+'.json';
+  a.click();
+}
+function importData(ev){
+  const f=ev.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{ const d=JSON.parse(r.result); if(d.income){D=d; save(); alert('Imported!');} else alert('Not a valid backup file.'); }catch(e){ alert('Could not read that file.'); } };
+  r.readAsText(f);
+  ev.target.value='';
+}
+render();
+</script>
+</body>
+</html>
