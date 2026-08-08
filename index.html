@@ -95,7 +95,7 @@
 </style>
 </head>
 <body>
-<h1>💵 Money Tracker</h1>
+<h1>💵 Money Tracker <span style="font-size:.65rem;opacity:.55;font-weight:400">v9</span></h1>
 <div class="wrap">
 
   <!-- ============ TODAY ============ -->
@@ -144,6 +144,7 @@
         <button class="chip" data-src="Air Force Customs">Air Force Customs</button>
         <button class="chip" data-src="Other">Other</button>
       </div>
+      <input type="text" id="incSrc" placeholder="What's it from? (e.g. eBay flip, cash job)" style="display:none;margin-top:8px">
       <div class="inline">
         <input type="number" inputmode="decimal" id="incAmt" placeholder="+200">
         <button class="primary" onclick="addIncome()">Add</button>
@@ -304,22 +305,24 @@ document.getElementById('srcChips').addEventListener('click',e=>{
   if(!e.target.dataset.src) return;
   curSrc=e.target.dataset.src;
   document.querySelectorAll('#srcChips .chip').forEach(c=>c.classList.toggle('on',c===e.target));
+  document.getElementById('incSrc').style.display=curSrc==='Other'?'':'none';
 });
 
 function addIncome(){
-  const el=document.getElementById('incAmt');
+  const el=document.getElementById('incAmt'), src=document.getElementById('incSrc');
   const a=parseFloat(el.value);
   if(!a||a<=0) return;
-  D.income.push({id:uid(),date:todayStr(),amount:a,source:curSrc});
-  el.value=''; save();
+  const source=curSrc==='Other'?(src.value.trim()||'Other'):curSrc;
+  D.income.push({id:uid(),date:todayStr(),amount:a,source});
+  el.value=''; src.value=''; save();
 }
 function addExpense(){
   const el=document.getElementById('expAmt'), ne=document.getElementById('expNote');
   const a=parseFloat(el.value);
   if(!a||a<=0) return;
   const note=ne.value.trim();
-  const bill=note?D.bills.find(b=>b.name.toLowerCase()===note.toLowerCase()):null;
-  const dbt=(!bill&&note)?D.debts.find(x=>x.name.toLowerCase()===note.toLowerCase()):null;
+  let bill=matchBill(note), dbt=matchDebt(note);
+  if(bill&&dbt){ if(confirm('"'+note+'" is both a bill and a debt.\nOK = pay the DEBT · Cancel = pay the bill')) bill=null; else dbt=null; }
   if(bill){
     // counts as paying toward that bill
     const info=billRemaining(bill);
@@ -334,6 +337,9 @@ function addExpense(){
   }
   el.value=''; ne.value=''; save();
 }
+const norm=s=>(s||'').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/[‘’`´]/g,"'").replace(/\s+/g,' ').trim();
+function matchBill(note){ return note?D.bills.find(b=>norm(b.name)===norm(note)):null; }
+function matchDebt(note){ return note?D.debts.find(x=>norm(x.name)===norm(note)):null; }
 function toggleFreq(){
   const y=document.getElementById('billFreq').value==='y';
   document.getElementById('billDue').style.display=y?'none':'';
@@ -431,12 +437,40 @@ function addPast(){
   const a=parseFloat(am.value);
   if(!dt.value||!a||a<=0) return;
   if(dt.value>todayStr()){alert('That date is in the future.');return;}
-  if(ty.value==='income') D.income.push({id:uid(),date:dt.value,amount:a,source:no.value.trim()||'Other'});
-  else D.expenses.push({id:uid(),date:dt.value,amount:a,note:no.value.trim()});
+  const pnote=no.value.trim();
+  if(ty.value==='income') D.income.push({id:uid(),date:dt.value,amount:a,source:pnote||'Other'});
+  else{
+    let bill=matchBill(pnote), dbt=matchDebt(pnote);
+    if(bill&&dbt){ if(confirm('"'+pnote+'" is both a bill and a debt.\nOK = pay the DEBT · Cancel = pay the bill')) bill=null; else dbt=null; }
+    if(bill){
+      const info=billRemaining(bill);
+      if(bill.paidCycle!==info.key){ bill.paid=0; bill.paidCycle=info.key; }
+      bill.paid=(bill.paid||0)+a;
+      D.expenses.push({id:uid(),date:dt.value,amount:a,note:bill.name+' payment',billId:bill.id});
+    }else if(dbt){
+      D.payments.push({id:uid(),date:dt.value,amount:a,debtId:dbt.id});
+    }else{
+      D.expenses.push({id:uid(),date:dt.value,amount:a,note:pnote});
+    }
+  }
   am.value=''; no.value=''; save();
 }
 function debtLeftOf(dbt){
   return Math.max(0,dbt.total-D.payments.filter(p=>p.debtId===dbt.id).reduce((s,p)=>s+p.amount,0));
+}
+function debtMinRemaining(dbt){
+  // how much of this cycle's minimum is still unpaid (payments this cycle count, incl. overpaying)
+  const min=Math.min(dbt.min||0,debtLeftOf(dbt));
+  if(min<=0) return 0;
+  let since;
+  if(dbt.due){
+    const prev=new Date(nextDue(dbt.due).date); prev.setMonth(prev.getMonth()-1);
+    since=localIso(prev);
+  }else{
+    since=todayStr().slice(0,8)+'01'; // no due day: this calendar month
+  }
+  const paid=D.payments.filter(p=>p.debtId===dbt.id&&p.date>since).reduce((s,p)=>s+p.amount,0);
+  return Math.max(0,min-paid);
 }
 function setCash(){
   const el=document.getElementById('cashInput');
@@ -480,7 +514,7 @@ function calc(){
 
   // set-aside: monthly bills count what's still unpaid this cycle; yearly bills count ÷12
   const billsTotal=D.bills.reduce((s,b)=>s+(b.freq==='y'?b.amount/12:billRemaining(b).remaining),0);
-  const minsTotal=D.debts.reduce((s,d)=>s+Math.min(d.min||0,debtLeftOf(d)),0);
+  const minsTotal=D.debts.reduce((s,d)=>s+debtMinRemaining(d),0);
   const debtLeft=D.debts.reduce((s,d)=>s+debtLeftOf(d),0);
   const free=cash-billsTotal-minsTotal;
 
@@ -495,7 +529,7 @@ function calc(){
   const monthEnd=new Date(now.getFullYear(),now.getMonth(),daysInMonth);
   const obls=[
     ...D.bills.map(b=>{const info=billRemaining(b);return {name:b.name,amount:info.remaining,nd:info.nd};}),
-    ...D.debts.filter(dd=>debtLeftOf(dd)>0&&dd.min>0).map(dd=>({name:dd.name,amount:Math.min(dd.min,debtLeftOf(dd)),nd:dd.due?nextDue(dd.due):null}))
+    ...D.debts.filter(dd=>debtLeftOf(dd)>0&&dd.min>0).map(dd=>({name:dd.name,amount:debtMinRemaining(dd),nd:dd.due?nextDue(dd.due):null}))
   ].filter(o=>o.amount>0).map(o=>{
     if(o.nd) return {...o,days:Math.max(1,o.nd.days),date:o.nd.date};
     return {...o,days:daysLeft,date:monthEnd}; // no due day: assume end of month
@@ -591,7 +625,12 @@ function render(){
       if(info.paid>0&&!done) tag+=(tag?' · ':'')+fmt(info.paid)+' already paid';
       return {name:b.name,amount:info.remaining,nd:info.nd,tag,done};
     }),
-    ...D.debts.filter(d=>debtLeftOf(d)>0&&d.min>0).map(d=>({name:d.name,amount:Math.min(d.min,debtLeftOf(d)),nd:d.due?nextDue(d.due):null,tag:'min payment',done:false}))
+    ...D.debts.filter(d=>debtLeftOf(d)>0&&d.min>0).map(d=>{
+      const rem=debtMinRemaining(d), minFull=Math.min(d.min,debtLeftOf(d));
+      let tag='min payment';
+      if(rem>0&&rem<minFull) tag+=' · '+fmt(minFull-rem)+' already paid';
+      return {name:d.name,amount:rem,nd:d.due?nextDue(d.due):null,tag,done:rem<=0};
+    })
   ].filter(x=>x.amount>0||x.done);
   const up=items2.filter(b=>b.nd).sort((a,b)=>a.nd.days-b.nd.days);
   const noDate=items2.filter(b=>!b.nd);
@@ -613,7 +652,8 @@ function render(){
   document.getElementById('debtsList').innerHTML = D.debts.length?
     D.debts.map(dbt=>{
       const left=debtLeftOf(dbt);
-      const meta=(dbt.min>0?'Min '+fmt(dbt.min)+'/mo':'No minimum set')+(dbt.due?' · due the '+ord(dbt.due):'')+(left>0?' · '+fmt(left)+' left':' · <span class="pos">paid off ✓</span>');
+      const minDone=dbt.min>0&&left>0&&debtMinRemaining(dbt)<=0;
+      const meta=(dbt.min>0?'Min '+fmt(dbt.min)+'/mo':'No minimum set')+(dbt.due?' · due the '+ord(dbt.due):'')+(minDone?' · <span class="pos">min paid this cycle ✓</span>':'')+(left>0?' · '+fmt(left)+' left':' · <span class="pos">paid off ✓</span>');
       return '<div class="row"><div>'+esc(dbt.name)+'<div class="meta">'+meta+'</div></div>'+
         '<div style="display:flex;align-items:center;gap:2px">'+
         '<button class="del" title="Log payment" onclick="payDebtFor(\''+dbt.id+'\')">💵</button>'+
