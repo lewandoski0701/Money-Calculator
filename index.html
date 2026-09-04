@@ -95,7 +95,7 @@
 </style>
 </head>
 <body>
-<h1>💵 Money Tracker <span style="font-size:.65rem;opacity:.55;font-weight:400">v9</span></h1>
+<h1>💵 Money Tracker <span style="font-size:.65rem;opacity:.55;font-weight:400">v10</span></h1>
 <div class="wrap">
 
   <!-- ============ TODAY ============ -->
@@ -527,20 +527,52 @@ function calc(){
   // personal spending only — bill payments are already counted as obligations
   const avgSpend=sumSince(D.expenses.filter(e=>!e.billId),iso(weekAgo))/7;
   const monthEnd=new Date(now.getFullYear(),now.getMonth(),daysInMonth);
-  const obls=[
-    ...D.bills.map(b=>{const info=billRemaining(b);return {name:b.name,amount:info.remaining,nd:info.nd};}),
-    ...D.debts.filter(dd=>debtLeftOf(dd)>0&&dd.min>0).map(dd=>({name:dd.name,amount:debtMinRemaining(dd),nd:dd.due?nextDue(dd.due):null}))
-  ].filter(o=>o.amount>0).map(o=>{
-    if(o.nd) return {...o,days:Math.max(1,o.nd.days),date:o.nd.date};
-    return {...o,days:daysLeft,date:monthEnd}; // no due day: assume end of month
-  }).sort((a,b)=>a.days-b.days);
+  // project ALL future occurrences of every bill and debt minimum over the next
+  // 6 months, so cycle resets never cause the target to jump.
+  const t0=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const horizon=183;
+  const mkDate=(y,m,day)=>{const dim=new Date(y,m+1,0).getDate();return new Date(y,m,Math.min(day,dim));};
+  const dayCount=dd=>Math.round((dd-t0)/86400000);
+  const occ=[];
+  D.bills.forEach(b=>{
+    const info=billRemaining(b);
+    const nd=info.nd||{date:monthEnd,days:daysLeft};
+    if(info.remaining>0) occ.push({name:b.name,amount:info.remaining,days:Math.max(1,nd.days),date:nd.date});
+    if(b.freq==='y') return; // yearly: next occurrence only
+    for(let k=1;k<=6;k++){
+      const d2=b.due?mkDate(nd.date.getFullYear(),nd.date.getMonth()+k,b.due)
+                    :new Date(nd.date.getFullYear(),nd.date.getMonth()+k+1,0);
+      const days2=dayCount(d2);
+      if(days2>horizon) break;
+      occ.push({name:b.name,amount:b.amount,days:Math.max(1,days2),date:d2});
+    }
+  });
+  D.debts.forEach(dbt=>{
+    const min=dbt.min||0;
+    let remDebt=debtLeftOf(dbt);
+    if(remDebt<=0||min<=0) return;
+    const nd=dbt.due?nextDue(dbt.due):{date:monthEnd,days:daysLeft};
+    const first=Math.min(debtMinRemaining(dbt),remDebt);
+    if(first>0){ occ.push({name:dbt.name,amount:first,days:Math.max(1,nd.days),date:nd.date}); remDebt-=first; }
+    else remDebt-=Math.min(min,remDebt); // this cycle's min already paid
+    for(let k=1;k<=6&&remDebt>0;k++){
+      const d2=dbt.due?mkDate(nd.date.getFullYear(),nd.date.getMonth()+k,dbt.due)
+                      :new Date(nd.date.getFullYear(),nd.date.getMonth()+k+1,0);
+      const days2=dayCount(d2);
+      if(days2>horizon) break;
+      const amt=Math.min(min,remDebt);
+      occ.push({name:dbt.name,amount:amt,days:Math.max(1,days2),date:d2});
+      remDebt-=amt;
+    }
+  });
+  occ.sort((a,b)=>a.days-b.days);
   let perDay=0, binding=null, cum=0;
-  for(const o of obls){
+  for(const o of occ){
     cum+=o.amount;
     const need=(cum+buffer-cash)/o.days+avgSpend;
     if(need>perDay){perDay=need; binding={name:o.name,date:o.date,days:o.days,cum};}
   }
-  if(!obls.length) perDay=Math.max(0,(buffer-cash)/daysLeft+avgSpend);
+  if(!occ.length) perDay=Math.max(0,(buffer-cash)/daysLeft+avgSpend);
   perDay=Math.max(0,perDay);
   const minEarn={perDay,daysLeft,avgSpend,buffer,binding};
 
